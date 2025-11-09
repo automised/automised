@@ -7,7 +7,7 @@ export function HowItWorks() {
       icon: MousePointer2,
       title: "Go to #️⃣ start-deal",
       description:
-        "Head to the #️⃣ start-deal channel and click the button to start a Middleman Deal. This will automatically open a private ticket with the Halal bot and staff.",
+        "Head to the #️⃣ start-deal channel and click the button to start a Middleman Deal. This will automatically open a private ticket with the Automised bot and staff.",
       label: "Step 1",
     },
     {

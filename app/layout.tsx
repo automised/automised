@@ -7,28 +7,14 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Halal MM - Automated Middleman Services",
+  title: "Automised MM - Automated Middleman Services",
   description: "Trusted crypto middleman bot running 24/7. Fast, fair, and scam proof.",
-  generator: "v0.app",
   icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
+    icon: "/favicon.ico", // Single favicon file
     apple: "/apple-icon.png",
   },
+    generator: 'v0.app'
 }
-
 export default function RootLayout({
   children,
 }: Readonly<{
