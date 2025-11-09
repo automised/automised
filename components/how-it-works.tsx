@@ -1,3 +1,5 @@
+"use client"
+
 import { MousePointer2, Users, DollarSign, CheckCircle2 } from "lucide-react"
 
 export function HowItWorks() {
@@ -98,7 +100,16 @@ export function HowItWorks() {
               <p className="text-sm text-muted-foreground">alongside you at each step for seamless experience</p>
             </div>
           </div>
-          <button className="rounded-full bg-primary px-6 py-3 font-medium text-primary-foreground transition-all hover:bg-primary/90">
+          <button
+            onClick={() =>
+              window.open(
+                "https://discord.com/channels/1407463097475534940/1437131469406470214",
+                "_blank",
+                "noopener,noreferrer",
+              )
+            }
+            className="rounded-full bg-primary px-6 py-3 font-medium text-primary-foreground transition-all hover:bg-primary/90 cursor-pointer"
+          >
             Open a ticket in the support channel for assistance.
           </button>
         </div>
