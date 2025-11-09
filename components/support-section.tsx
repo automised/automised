@@ -1,4 +1,5 @@
-import Link from "next/link"
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Headset } from "lucide-react"
 
@@ -14,14 +15,18 @@ export function SupportSection() {
             We are with you in every step
           </h2>
           <p className="mb-8 text-muted-foreground">alongside you at each step for seamless experience</p>
-          <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>
-            <Link
-              href="https://discord.com/channels/1407463097475534940/1437131469406470214"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Open a ticket in the support channel for assistance.
-            </Link>
+          <Button
+            size="lg"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+            onClick={() =>
+              window.open(
+                "https://discord.com/channels/1407463097475534940/1437131469406470214",
+                "_blank",
+                "noopener,noreferrer",
+              )
+            }
+          >
+            Open a ticket in the support channel for assistance.
           </Button>
           {/* </CHANGE> */}
         </div>
@@ -30,7 +35,7 @@ export function SupportSection() {
       {/* Footer */}
       <footer className="mt-16 border-t border-border pt-8">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>© 2025 Halal MM. All rights reserved.</p>
+          <p>© 2025 Automised MM. All rights reserved.</p>
         </div>
       </footer>
     </section>
