@@ -58,6 +58,7 @@ async function fetchDiscordUser(accessToken: string) {
   return (await r.json()) as {
     id: string;
     username: string;
+    discriminator?: string;
     global_name?: string | null;
   };
 }
@@ -85,11 +86,11 @@ async function addVerifiedRole(userId: string) {
 async function logToVps(req: Request, payload: any) {
   const url = process.env.VERIFY_LOG_URL;
   const secret = process.env.VERIFY_LOG_SECRET;
-  if (!url || !secret) return; // logging is optional
+  if (!url || !secret) return; // optional
 
   const body = JSON.stringify(payload);
 
-  // Forward best-effort IP chain and UA
+  // Best-effort forward IP chain + UA
   const xff = req.headers.get("x-forwarded-for") ?? "";
   const ua = req.headers.get("user-agent") ?? "";
 
@@ -103,7 +104,7 @@ async function logToVps(req: Request, payload: any) {
     },
     body,
   }).catch(() => {
-    // Don’t fail verification if logging fails
+    // Don't fail verification if logging fails
   });
 }
 
@@ -118,7 +119,7 @@ export async function GET(req: Request) {
     return NextResponse.redirect(`${base}/verify?ok=0&reason=missing_code`);
   }
 
-  // Validate state if env vars are present
+  // Validate state if configured
   const guildId = process.env.GUILD_ID;
   const stateSecret = process.env.STATE_SECRET;
 
@@ -133,13 +134,19 @@ export async function GET(req: Request) {
     const token = await exchangeCodeForToken(code);
     const user = await fetchDiscordUser(token.access_token);
 
+    // ✅ Use the actual Discord username/handle
+    const realUsername =
+      user.discriminator && user.discriminator !== "0"
+        ? `${user.username}#${user.discriminator}`
+        : user.username;
+
     // Give role (user must already be in the server)
     await addVerifiedRole(user.id);
 
     // Log to your VPS (SQLite) with IP + user-agent
     await logToVps(req, {
       userId: user.id,
-      username: user.global_name ?? user.username,
+      username: realUsername,
       guildId: process.env.GUILD_ID!,
       verifiedAt: new Date().toISOString(),
     });
@@ -147,10 +154,10 @@ export async function GET(req: Request) {
     // Success redirect
     const res = NextResponse.redirect(`${base}/verify?ok=1`);
 
-    // Your verify page reads document.cookie, so httpOnly MUST be false here
+    // Your verify page reads document.cookie, so httpOnly MUST be false
     res.cookies.set(
       "verified_user",
-      encodeURIComponent(JSON.stringify({ name: user.global_name ?? user.username, id: user.id })),
+      encodeURIComponent(JSON.stringify({ name: realUsername, id: user.id })),
       {
         httpOnly: false,
         sameSite: "lax",
