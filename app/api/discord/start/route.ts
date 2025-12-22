@@ -25,7 +25,7 @@ export async function GET() {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "identify email guilds.join", // Added email and guilds.join
+    scope: "identify email guilds.join",
     prompt: "consent",
   });
 
@@ -34,5 +34,10 @@ export async function GET() {
     params.append("state", state);
   }
 
+  // Add warning about VPN blocking
+  params.append("disable_guess", "true"); // Optional: disable Discord's guess UI
+  
+  // Instead of immediate redirect, you could show a warning page first
+  // But for simplicity, we'll redirect directly
   return NextResponse.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 }

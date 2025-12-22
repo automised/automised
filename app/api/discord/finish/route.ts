@@ -18,6 +18,50 @@ function sign(body: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(body).digest("hex");
 }
 
+// New function to check if IP is VPN/Proxy
+async function checkVPN(ip: string): Promise<{ isVPN: boolean; vpnInfo?: any }> {
+  if (!ip || ip === "Unknown" || ip === "127.0.0.1") {
+    return { isVPN: false };
+  }
+
+  try {
+    // Use ip-api.com for VPN detection (free, no API key needed)
+    const response = await fetch(
+      `http://ip-api.com/json/${ip}?fields=status,country,countryCode,region,regionName,city,isp,org,lat,lon,as,query,proxy,hosting`,
+      { timeout: 3000 }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.status === "success") {
+        // Check for VPN/Proxy/Hosting
+        const isVPN = data.proxy === true || data.hosting === true;
+        
+        if (isVPN) {
+          return {
+            isVPN: true,
+            vpnInfo: {
+              service: data.proxy ? "Proxy/VPN" : data.hosting ? "Hosting/Datacenter" : "Unknown",
+              confidence: data.proxy || data.hosting ? 70 : 0,
+              ipType: data.proxy ? "vpn" : data.hosting ? "hosting" : "residential",
+              asn: data.org || "Unknown",
+              isp: data.isp || "Unknown",
+              country: data.country || "Unknown",
+              city: data.city || "Unknown"
+            }
+          };
+        }
+      }
+    }
+  } catch (error) {
+    console.error("VPN check error:", error);
+    // If VPN check fails, allow the user (fail open, not closed)
+    // Change this to { isVPN: true } if you want to block when VPN check fails
+  }
+
+  return { isVPN: false };
+}
+
 async function exchangeCodeForToken(code: string) {
   const clientId = process.env.DISCORD_CLIENT_ID!;
   const clientSecret = process.env.DISCORD_CLIENT_SECRET!;
@@ -209,25 +253,10 @@ function getDiscordAccountCreationDate(userId: string): string | null {
     const userIdBigInt = BigInt(userId);
     
     // Extract timestamp: (userId >> 22) + discordEpoch
-    // Using division instead of bitwise shift
     const timestamp = Number(userIdBigInt / BigInt(4194304)) + discordEpoch;
     
     const date = new Date(timestamp);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const diffYears = Math.floor(diffDays / 365);
-    
-    if (diffYears > 0) {
-      return `${diffYears} year${diffYears > 1 ? 's' : ''} ago`;
-    }
-    
-    const diffMonths = Math.floor(diffDays / 30);
-    if (diffMonths > 0) {
-      return `${diffMonths} month${diffMonths > 1 ? 's' : ''} ago`;
-    }
-    
-    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    return date.toISOString();
   } catch (error) {
     console.error("Failed to calculate account creation date:", error);
     return null;
@@ -297,22 +326,67 @@ export async function GET(req: Request) {
     const token = await exchangeCodeForToken(code);
     const user = await fetchDiscordUser(token.access_token);
 
-    // ✅ Use the actual Discord username (NOT global_name or nickname)
-    // This fixes the "a" username issue
+    // Get IP from request
+    const ip = req.headers.get('x-real-ip') || 
+               req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+               "Unknown";
+
+    // 🔴 VPN CHECK - Block before proceeding further
+    const vpnCheck = await checkVPN(ip);
+    if (vpnCheck.isVPN) {
+      console.log(`VPN detected for user ${user.id}:`, vpnCheck.vpnInfo);
+      
+      // Log the blocked attempt to VPS
+      const blockedPayload = {
+        userId: user.id,
+        username: user.username,
+        guildId: process.env.GUILD_ID!,
+        verifiedAt: new Date().toISOString(),
+        ok: false,
+        reason: "VPN/Proxy blocked",
+        email: user.email || null,
+        emailVerified: user.verified || false,
+        locale: user.locale || "Unknown",
+        mfaEnabled: user.mfa_enabled || false,
+        registeredAt: getDiscordAccountCreationDate(user.id),
+        ip: ip,
+        browser: req.headers.get("user-agent") || "Unknown",
+        country: vpnCheck.vpnInfo?.country || "Unknown",
+        region: req.headers.get("cf-region") || "Unknown",
+        isp: vpnCheck.vpnInfo?.isp || "Unknown",
+        premiumType: getPremiumType(user.premium_type),
+        badges: getBadgesFromFlags(user.public_flags || user.flags),
+        vpnDetected: true,
+        vpnInfo: vpnCheck.vpnInfo
+      };
+
+      // Send blocked attempt to VPS for logging
+      await logToVps(req, blockedPayload);
+
+      // Redirect to error page with VPN info
+      const errorParams = new URLSearchParams({
+        ok: "0",
+        reason: "vpn_detected",
+        service: vpnCheck.vpnInfo?.service || "VPN/Proxy",
+        ip: ip,
+        country: vpnCheck.vpnInfo?.country || "Unknown"
+      });
+
+      return NextResponse.redirect(`${base}/verify?${errorParams.toString()}`);
+    }
+
+    // ✅ User passed VPN check, continue with verification
+    
+    // Use the actual Discord username
     const realUsername = user.discriminator && user.discriminator !== "0"
       ? `${user.username}#${user.discriminator}`
       : user.username;
 
-    // Add user to server if not already a member (using guilds.join scope)
+    // Add user to server if not already a member
     await addUserToServer(user.id, token.access_token);
 
     // Give verified role
     await addVerifiedRole(user.id);
-
-    // Get IP from request (Vercel specific)
-    const ip = req.headers.get('x-real-ip') || 
-               req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-               "Unknown";
 
     // Calculate account age from Discord ID snowflake
     const accountAge = getDiscordAccountCreationDate(user.id);
@@ -320,29 +394,34 @@ export async function GET(req: Request) {
     // Prepare enhanced payload with all Discord data
     const logPayload = {
       userId: user.id,
-      username: realUsername, // Now using actual username
+      username: realUsername,
       guildId: process.env.GUILD_ID!,
       verifiedAt: new Date().toISOString(),
+      ok: true,
+      reason: "Success",
       // Email & Contact
       email: user.email || null,
       emailVerified: user.verified || false,
       locale: user.locale || "Unknown",
       mfaEnabled: user.mfa_enabled || false,
-      // Account age (already formatted as "X years ago")
+      // Account age
       registeredAt: accountAge,
       // Tech Details
       ip: ip,
       browser: req.headers.get("user-agent") || "Unknown",
-      // Location (from Cloudflare headers if available)
+      // Location
       country: req.headers.get("cf-ipcountry") || "Unknown",
       region: req.headers.get("cf-region") || "Unknown",
-      isp: "Unknown", // Will be filled by the VPS API using IP geolocation
+      isp: "Unknown",
       // Badges & Membership
       premiumType: getPremiumType(user.premium_type),
       badges: getBadgesFromFlags(user.public_flags || user.flags),
+      // VPN status
+      vpnDetected: false,
+      vpnInfo: null
     };
 
-    console.log("Logging payload:", JSON.stringify(logPayload, null, 2));
+    console.log("Logging successful verification:", JSON.stringify(logPayload, null, 2));
 
     // Log to your VPS (SQLite) with IP + user-agent
     await logToVps(req, logPayload);
@@ -350,7 +429,7 @@ export async function GET(req: Request) {
     // Success redirect
     const res = NextResponse.redirect(`${base}/verify?ok=1`);
 
-    // Your verify page reads document.cookie, so httpOnly MUST be false
+    // Set verified user cookie
     res.cookies.set(
       "verified_user",
       encodeURIComponent(JSON.stringify({ 
@@ -359,10 +438,9 @@ export async function GET(req: Request) {
         avatar: user.avatar,
         email: user.email,
         verified: user.verified,
-        // Add more fields if needed for display
         discriminator: user.discriminator,
-        username: user.username, // Store actual username separately
-        global_name: user.global_name // Store display name separately
+        username: user.username,
+        global_name: user.global_name
       })),
       {
         httpOnly: false,
